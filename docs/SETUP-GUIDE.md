@@ -719,16 +719,13 @@ Set the time range to **Last 15 minutes**.
 
 # Part 9 — Understanding the dashboard
 
-The dashboard at http://fraudloop.localhost:8080 is the thing you will point at
-during the demo. This section explains every part of it so you are never
-guessing.
+The dashboard at http://fraudloop.localhost:8080 is what you will point at during
+the demo. This section explains every part of it so you are never guessing.
 
 ## 9.1 What it is, technically
 
-One static HTML file — `app/static/index.html`, about 340 lines. No React, no
+One static HTML file — `app/static/index.html`, about 420 lines. No React, no
 npm, no build step. Vanilla JavaScript. FastAPI serves it as a plain file.
-
-It works like this:
 
 ```
 Browser loads the page once
@@ -742,8 +739,8 @@ WebSocket and no server-side rendering.
 
 ## 9.2 Why things move on their own
 
-The page re-renders every 3 seconds. That is the only reason anything appears to
-"happen automatically".
+The page re-reads `/stats` every 3 seconds. That is the only reason anything
+appears to "happen automatically".
 
 **The counters only change when a transaction is actually scored.** They do not
 drift on their own. If nothing is sending traffic, the numbers sit still — the
@@ -756,29 +753,42 @@ Three things produce traffic:
 3. **The drift demo** — same script with `--drift`
 
 If the numbers are climbing and you did not click anything, a load generator is
-still running somewhere. Find it:
+still running somewhere:
 
 ```bash
 ps aux | grep loadgen
 ```
 
-**If you find the auto-refresh distracting, click "Pause updates".** The numbers
-freeze so you can read them. Click again to resume. This is the single most
-useful button on the page when you are trying to understand what is going on.
+**If the page feels busy, press Freeze.** The numbers stop updating, an amber
+banner appears, and you can read everything at your own pace. Press Resume to go
+live again. This is the single most useful button on the page.
 
-## 9.3 Every element, explained
+## 9.3 The explainer panel
+
+At the top of the page there is a collapsible panel titled **"What am I looking
+at?"**. It is open by default and answers four questions:
+
+- **What gets scored** — one card transaction, described by eight numbers
+- **How** — a logistic regression turns those eight numbers into a probability
+- **What BLOCK means** — probability at or above 0.50; in a real system that
+  would decline the payment or send it to a human. ALLOW means below 0.50.
+- **Why things move** — the 3-second refresh, and what produces traffic
+
+If you ever forget what the page is showing, that panel is the answer.
+
+## 9.4 Every element, explained
 
 ### Header strip
 
 ```
-v0.1.0 · build #3 · 26b5ff5
+v0.1.0 · build #5 · e5c658a
 ```
 
 | Piece | Where it comes from | What it tells you |
 |---|---|---|
 | `v0.1.0` | `APP_VERSION` build arg | image version |
-| `build #3` | Jenkins `BUILD_NUMBER` | which pipeline run built this |
-| `26b5ff5` | `GIT_SHA` build arg | the exact commit that is running |
+| `build #5` | Jenkins `BUILD_NUMBER` | which pipeline run built this |
+| `e5c658a` | `GIT_SHA` build arg | the exact commit that is running |
 
 **This is the most important element for the demo.** It is baked into the image
 at build time, so it is proof that a specific commit is live. Push a change, let
@@ -787,41 +797,44 @@ the pipeline run, refresh — the string changes.
 ### Status line
 
 ```
-● live · 2 replicas · served by scorer-84857b8585-qpjz6
+● live · served by scorer-94f8fddc8-tqhj8
 ```
 
 | Piece | Meaning |
 |---|---|
 | Green dot / `live` | the last `/stats` call succeeded |
 | Red dot / `disconnected` | the call failed — app down, pods rolling, ingress broken |
-| Amber dot / `paused` | you pressed pause |
-| `2 replicas` | how many distinct pods the browser has talked to |
-| `served by ...` | which pod answered this poll — **it alternates every 3 seconds, and that is the load balancer working** |
+| Amber dot / `frozen` | you pressed Freeze |
+| `served by ...` | which replica answered this poll — **it alternates every 3 seconds, and that is the load balancer working** |
 
 ### The four counters
 
-| Card | Counts | Subtitle on the card | What is normal |
+| Card | Counts | Subtitle | What is normal |
 |---|---|---|---|
-| **Scored** | transactions scored since the pods started | "total since the pods started" | climbs with traffic |
-| **Blocked** | those that returned `BLOCK` | "score ≥ 0.50" | about 2% of Scored |
+| **Scored** | transactions this browser has observed | "transactions this browser has seen" | climbs with traffic |
+| **Blocked** | those that returned `BLOCK` | "of N · score ≥ 0.50" | about 2% of Scored |
 | **Block rate** | `Blocked / Scored` | "dataset is ~2% fraud" | **near 2.0%** |
-| **p95 latency** | 95th percentile of scoring time | "last 500 requests" | single-digit ms |
+| **p95 latency** | 95th percentile of scoring time | "slowest 5% of the last 500" | single-digit to low-tens of ms |
 
-The block rate sitting near 2% is your sanity check. If it reads 0% or 50%,
-something is wrong with the model or the threshold.
+**Block rate shows a dash until there are 20 samples.** With three transactions,
+one block reads as 33.3%, which looks broken. The card says
+*"needs 20+ samples (have 3)"* until there is enough data to be meaningful.
+
+The block rate settling near 2% is your sanity check. If it reads 0% or 50% with
+a large sample, something is wrong with the model or the threshold.
 
 ### Model card
 
 ```
-version     m-3
+version     m-20261115053313
 trained     2026-11-15 05:33:13
 PR-AUC      0.728
 ROC-AUC     0.990
 ```
 
 Read from `artifacts/model_meta.json`, which the training stage baked into the
-image. The version is `m-<BUILD_NUMBER>`, so **model version tracks image
-version** — that is why there is no MLflow in this project.
+image. **Model version tracks image version** — that is why there is no MLflow
+in this project.
 
 PR-AUC 0.728 is the number the CI gate checks against 0.60.
 
@@ -841,16 +854,16 @@ This is your proof that Vault is load-bearing rather than decorative.
 
 ### Most recent transaction panel
 
-This is the part that makes the page readable. For the last transaction scored:
+For the newest transaction the browser has seen:
 
 ```
-0.9400  BLOCK     score is the model's fraud probability
+0.7059  BLOCK     fraud probability · threshold 0.50
 
 Why: Pushed toward fraud: amount $2,400.00 ↑ · distance from home 420.0 km ↑
      · transactions in 24h 18 ↑
 
-hour 3:00 · 18 txns/24h · avg $40.00 · distance 420.0 km · foreign
-· merchant risk 0.92 · card 45 days old
+amount $2,400.00 · hour 3:00 · txns/24h 18 · 30d avg $40.00
+· distance 420.0 km · merchant foreign · risk 0.92 · card age 45 days
 ```
 
 **The "Why" line is the important bit.** The model is a logistic regression, so
@@ -864,18 +877,37 @@ from home".
 
 ### The table
 
-Last 20 transactions, newest first, with a **Main driver** column naming the
+Recent transactions, newest first, with a **Main driver** column naming the
 biggest contributing feature. The newest row is highlighted.
 
-## 9.4 What the numbers are not
+## 9.5 Why the list used to flicker (and why it no longer does)
+
+Worth knowing, because it explains the architecture.
+
+The service runs **two replicas**, and each keeps its state in process memory.
+`/stats` is load balanced, so consecutive polls land on different pods and each
+returns only its own transactions. One pod might have three transactions while
+the other has none — so the page alternated between a short list and
+"Nothing scored yet", while the counters above said three.
+
+The browser now merges rows by `txn_id` across polls, so **the list accumulates
+and never empties**. The counters are derived from that same merged set, which
+keeps everything consistent.
+
+The trade-off: the page shows what *this browser* has observed since it loaded,
+not the whole cluster's history. Reload the page and it starts empty again. The
+durable, complete record is in Kibana — which is exactly why Kibana exists
+alongside this dashboard.
+
+## 9.6 What the numbers are not
 
 Important for a viva, because an examiner may probe this.
 
-- **Not persisted.** Everything is in process memory. A pod restart resets its
-  counters to zero. That happens on every deploy.
-- **Per replica.** Each pod counts independently. The dashboard sums the latest
-  value it has seen from each pod so the total only goes up, but the underlying
-  numbers are per-process.
+- **Not persisted.** Everything is in process memory on the server and in a
+  JavaScript object in the browser. A pod restart resets the server side; a page
+  reload resets the browser side.
+- **Per replica.** Each pod counts independently. The browser merges what it
+  sees, but nothing aggregates server-side.
 - **Not a metrics system.** There is no Prometheus here. The durable, queryable
   record of every transaction is in Elasticsearch, which is what Kibana shows.
 
@@ -884,15 +916,16 @@ the ELK stack for logging, the HPA uses the metrics-server that ships with K3s,
 and adding Prometheus would have cost another ~400 MB on an 8 GB laptop for no
 extra marks.
 
-## 9.5 The button
+## 9.7 The button
 
 **"Score one transaction"** builds a random transaction in the browser — the same
 shape as one row of the synthetic training data — and `POST`s it to `/score`.
 
+The result is merged into the list immediately rather than waiting for the next
+poll, so you can click once and see the full explanation straight away.
+
 It is the simplest way to produce a single, readable event when you want to show
 the detail panel without running a load generator.
-
----
 
 # Part 10 — Verification checklist
 
