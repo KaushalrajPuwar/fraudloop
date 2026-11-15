@@ -1,0 +1,18 @@
+---
+# One command brings the whole platform up from nothing:
+#   ansible-playbook site.yml
+#
+# Roles are ordered so each one only depends on what came before it.
+- name: Provision the FraudLoop platform
+  hosts: local
+  gather_facts: false
+
+  roles:
+    - role: cluster
+      tags: [cluster]
+    - role: elk
+      tags: [elk, logging]
+    - role: vault
+      tags: [vault, secrets]
+    - role: jenkins
+      tags: [jenkins, ci]

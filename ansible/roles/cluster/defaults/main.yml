@@ -1,0 +1,5 @@
+---
+cluster_name: fraudloop
+cluster_servers: 1
+cluster_agents: 1
+repo_root: "{{ playbook_dir }}/.."

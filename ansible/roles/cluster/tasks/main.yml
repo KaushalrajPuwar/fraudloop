@@ -1,0 +1,45 @@
+---
+- name: Check that k3d is installed
+  ansible.builtin.command: k3d version
+  register: k3d_check
+  changed_when: false
+  failed_when: k3d_check.rc != 0
+
+- name: List existing k3d clusters
+  ansible.builtin.shell: k3d cluster list --no-headers 2>/dev/null | awk '{print $1}'
+  args:
+    executable: /bin/bash
+  register: existing_clusters
+  changed_when: false
+
+- name: Create the cluster
+  ansible.builtin.command:
+    argv:
+      - k3d
+      - cluster
+      - create
+      - "{{ cluster_name }}"
+      - --servers
+      - "{{ cluster_servers }}"
+      - --agents
+      - "{{ cluster_agents }}"
+      - --port
+      - "8080:80@loadbalancer"
+      - --port
+      - "8443:443@loadbalancer"
+      - --wait
+  when: cluster_name not in existing_clusters.stdout_lines
+  register: cluster_created
+
+- name: Wait for both nodes to register
+  kubernetes.core.k8s_info:
+    kind: Node
+  register: node_info
+  until: node_info.resources | length >= 2
+  retries: 40
+  delay: 3
+
+- name: Apply namespaces
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ repo_root }}/k8s/00-namespaces.yaml"
