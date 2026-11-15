@@ -20,6 +20,9 @@ class Settings:
     Docker Compose, and in Kubernetes without modification.
     """
 
+    # Kubernetes sets HOSTNAME to the pod name; used to tell replicas apart.
+    pod: str = field(default_factory=lambda: _env("HOSTNAME", "local") or "local")
+
     # Build identity - baked into the image at build time, shown on the dashboard.
     version: str = field(default_factory=lambda: _env("APP_VERSION", "0.1.0") or "0.1.0")
     build_number: str = field(default_factory=lambda: _env("BUILD_NUMBER", "dev") or "dev")

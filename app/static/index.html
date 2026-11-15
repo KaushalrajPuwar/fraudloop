@@ -113,6 +113,23 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+// Each replica keeps its counters in process memory, so consecutive polls can
+// land on different pods and the raw numbers jump around. The dashboard keeps
+// the latest value seen from every replica and shows the sum, which only ever
+// goes up.
+const seen = {};
+
+function aggregate(s) {
+  seen[s.pod] = { scored: s.counters.scored, fraud: s.counters.fraud };
+  let scored = 0;
+  let fraud = 0;
+  for (const v of Object.values(seen)) {
+    scored += v.scored;
+    fraud += v.fraud;
+  }
+  return { scored, fraud, replicas: Object.keys(seen).length };
+}
+
 function randomTransaction() {
   const amount = Math.round(Math.exp(4.2 + (Math.random() - 0.5) * 2.2) * 100) / 100;
   return {
@@ -130,10 +147,13 @@ function randomTransaction() {
 async function refresh() {
   try {
     const s = await (await fetch("/stats")).json();
+    const totals = aggregate(s);
     $("version").textContent = `v${s.version} · build #${s.build} · ${s.git_sha}`;
-    $("scored").textContent = s.counters.scored.toLocaleString();
-    $("fraud").textContent = s.counters.fraud.toLocaleString();
-    $("rate").textContent = (s.counters.fraud_rate * 100).toFixed(1) + "%";
+    $("scored").textContent = totals.scored.toLocaleString();
+    $("fraud").textContent = totals.fraud.toLocaleString();
+    $("rate").textContent = totals.scored
+      ? ((totals.fraud / totals.scored) * 100).toFixed(1) + "%"
+      : "0.0%";
     $("latency").innerHTML = s.counters.p95_latency_ms + '<small style="font-size:14px;color:var(--muted)"> ms</small>';
     if (s.model) {
       $("model-version").textContent = s.model.version;
@@ -143,7 +163,12 @@ async function refresh() {
     }
     $("secret-source").textContent = s.secret.source;
     $("secret-fp").textContent = s.secret.fingerprint;
-    $("status").innerHTML = '<span class="dot"></span>live';
+    $("status").innerHTML =
+      '<span class="dot"></span>live · ' +
+      totals.replicas +
+      (totals.replicas === 1 ? " replica" : " replicas") +
+      ' · served by ' +
+      s.pod;
 
     const body = $("rows");
     if (!s.recent.length) {

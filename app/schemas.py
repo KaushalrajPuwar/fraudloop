@@ -53,6 +53,7 @@ class StatsResponse(BaseModel):
     version: str
     build: str
     git_sha: str
+    pod: str = Field(description="Replica that served this response")
     model: ModelInfo | None
     secret: SecretInfo
     counters: Counters

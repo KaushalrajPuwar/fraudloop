@@ -246,6 +246,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             version=config.version,
             build=config.build_number,
             git_sha=config.git_sha,
+            pod=config.pod,
             model=model_info,
             secret=SecretInfo(source=secret.source, fingerprint=secret.fingerprint),
             counters=counters,
