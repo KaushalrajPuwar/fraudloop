@@ -21,6 +21,7 @@ spec:
       labels:
         app.kubernetes.io/name: scorer
     spec:
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
@@ -29,7 +30,7 @@ spec:
       containers:
         - name: scorer
           image: docker.io/kaushalrajpuwar/fraudloop-scorer:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8000
@@ -66,6 +67,13 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
+          # Give the endpoint controller time to remove this pod from the
+          # Service before the process stops accepting connections. Without
+          # this, a rolling update drops a small number of in-flight requests.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
