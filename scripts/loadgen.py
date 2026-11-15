@@ -15,6 +15,7 @@ import random
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 DEFAULT_URL = "http://localhost:8000"
@@ -43,11 +44,15 @@ def random_transaction(drift: bool = False) -> dict:
     }
 
 
-def post(url: str, payload: dict) -> int:
+def post(url: str, payload: dict, host_header: str | None = None) -> int:
+    headers = {"Content-Type": "application/json"}
+    if host_header:
+        # Needed when hitting a Kubernetes ingress that routes by host name.
+        headers["Host"] = host_header
     request = urllib.request.Request(
         f"{url.rstrip('/')}/score",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -66,13 +71,14 @@ def main() -> int:
     parser.add_argument("--duration", type=int, default=30, help="Seconds to run")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--drift", action="store_true", help="Shift the feature distribution")
+    parser.add_argument("--host-header", default=None, help="Host header, for ingress-routed URLs")
     args = parser.parse_args()
 
     total = args.rate * args.duration
     interval = 1.0 / args.rate
     sent = 0
-    ok = 0
     started = time.perf_counter()
+    codes: Counter[int] = Counter()
 
     print(f"sending {total} requests to {args.url} at ~{args.rate}/s"
           f"{' (drift mode)' if args.drift else ''}")
@@ -80,7 +86,9 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = []
         for _ in range(total):
-            futures.append(pool.submit(post, args.url, random_transaction(args.drift)))
+            futures.append(
+                pool.submit(post, args.url, random_transaction(args.drift), args.host_header)
+            )
             sent += 1
             target = started + sent * interval
             sleep_for = target - time.perf_counter()
@@ -88,12 +96,18 @@ def main() -> int:
                 time.sleep(sleep_for)
 
         for future in futures:
-            if future.result() == 200:
-                ok += 1
+            codes[future.result()] += 1
 
     elapsed = time.perf_counter() - started
+    ok = codes.get(200, 0)
     print(f"sent {sent}  ok {ok}  failed {sent - ok}  "
           f"in {elapsed:.1f}s ({sent / elapsed:.1f}/s)")
+    if sent - ok:
+        breakdown = ", ".join(
+            f"{code or 'conn-error'}={count}" for code, count in sorted(codes.items())
+            if code != 200
+        )
+        print(f"failures: {breakdown}")
     return 0 if ok == sent else 1
 
 
