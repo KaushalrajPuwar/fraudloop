@@ -19,6 +19,14 @@ class Transaction(BaseModel):
     card_age_days: int = Field(ge=0, le=50_000, description="Age of the card in days")
 
 
+class Reason(BaseModel):
+    """One feature's contribution to a prediction."""
+
+    feature: str
+    value: float
+    contribution: float = Field(description="Positive pushes toward fraud")
+
+
 class ScoreResponse(BaseModel):
     """The model's verdict on one transaction."""
 
@@ -27,6 +35,7 @@ class ScoreResponse(BaseModel):
     decision: str = Field(description="BLOCK or ALLOW")
     model_version: str
     latency_ms: float
+    reasons: list[Reason] = Field(default_factory=list)
 
 
 class ModelInfo(BaseModel):

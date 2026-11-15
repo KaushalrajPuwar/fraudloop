@@ -162,6 +162,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         values = transaction.model_dump()
 
         probability = model.predict_proba(values)
+        reasons = model.explain(values)
         latency_ms = round((time.perf_counter() - started) * 1000, 3)
         decision = "BLOCK" if probability >= config.fraud_threshold else "ALLOW"
 
@@ -176,6 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "score": round(probability, 4),
                 "decision": decision,
                 "ts": time.time(),
+                "reasons": reasons,
                 **{feature: values[feature] for feature in FEATURES},
             }
         )
@@ -206,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             decision=decision,
             model_version=model.version,
             latency_ms=latency_ms,
+            reasons=reasons,
         )
         return JSONResponse(
             content=response.model_dump(),

@@ -56,8 +56,34 @@ class ModelBundle:
 
     def predict_proba(self, values: dict[str, float]) -> float:
         """Score a single transaction. Returns the fraud probability."""
-        row = pd.DataFrame([[float(values[name]) for name in FEATURES]], columns=FEATURES)
+        row = self._row(values)
         return float(self.pipeline.predict_proba(row)[0][1])
+
+    def explain(self, values: dict[str, float], top_n: int = 3) -> list[dict[str, object]]:
+        """The features that pushed this prediction, largest influence first.
+
+        For a linear model the contribution of a feature is its coefficient
+        times its scaled value, so this is exact rather than an approximation.
+        """
+        scaler = self.pipeline.named_steps["standardscaler"]
+        classifier = self.pipeline.named_steps["logisticregression"]
+
+        scaled = scaler.transform(self._row(values))[0]
+        contributions = classifier.coef_[0] * scaled
+
+        order = sorted(range(len(FEATURES)), key=lambda i: -abs(contributions[i]))[:top_n]
+        return [
+            {
+                "feature": FEATURES[i],
+                "value": round(float(values[FEATURES[i]]), 4),
+                "contribution": round(float(contributions[i]), 3),
+            }
+            for i in order
+        ]
+
+    @staticmethod
+    def _row(values: dict[str, float]) -> pd.DataFrame:
+        return pd.DataFrame([[float(values[name]) for name in FEATURES]], columns=FEATURES)
 
 
 def load_model(model_dir: Path) -> ModelBundle:
