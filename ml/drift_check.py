@@ -28,6 +28,12 @@ def main() -> int:
     parser.add_argument("--url", default=DEFAULT_URL, help="Base URL of the scorer")
     parser.add_argument("--meta", type=Path, default=DEFAULT_META)
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument(
+        "--stats-file",
+        type=Path,
+        default=None,
+        help="Read a previously captured /stats payload instead of calling the API",
+    )
     args = parser.parse_args()
 
     if not args.meta.exists():
@@ -39,14 +45,21 @@ def main() -> int:
     baseline_means = meta["baseline_means"]
     baseline_stds = meta["baseline_stds"]
 
-    try:
-        response = httpx.get(f"{args.url.rstrip('/')}/stats", timeout=10.0)
-        response.raise_for_status()
-    except Exception as exc:  # noqa: BLE001
-        print(f"could not reach scorer at {args.url}: {exc}", file=sys.stderr)
-        return 3
+    if args.stats_file:
+        if not args.stats_file.exists():
+            print(f"no stats file at {args.stats_file}", file=sys.stderr)
+            return 3
+        payload = json.loads(args.stats_file.read_text(encoding="utf-8"))
+    else:
+        try:
+            response = httpx.get(f"{args.url.rstrip('/')}/stats", timeout=10.0)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:  # noqa: BLE001
+            print(f"could not reach scorer at {args.url}: {exc}", file=sys.stderr)
+            return 3
 
-    live_means = response.json().get("feature_means") or {}
+    live_means = payload.get("feature_means") or {}
     if not live_means:
         print("no live traffic yet - nothing to compare")
         return 0
