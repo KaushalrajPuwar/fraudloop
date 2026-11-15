@@ -10,9 +10,9 @@ htmlcov/
 
 # --- Generated artifacts ---
 data/*.csv
+artifacts/
 *.pkl
 *.joblib
-model_meta.json
 reports/
 
 # --- Local / secrets ---
