@@ -25,8 +25,17 @@
     font-family: var(--mono); font-size: 12px; color: var(--muted);
     border: 1px solid var(--border); border-radius: 999px; padding: 3px 12px;
   }
-  .lede { color: var(--muted); font-size: 13px; margin: 10px 0 4px; max-width: 720px; }
-  .lede code { font-family: var(--mono); font-size: 12px; color: var(--text); }
+
+  details.explainer {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; margin: 16px 0; font-size: 13px; color: var(--muted);
+  }
+  details.explainer summary { cursor: pointer; color: var(--text); font-weight: 600; }
+  details.explainer summary::marker { color: var(--accent); }
+  details.explainer p { margin: 10px 0 0; }
+  details.explainer strong { color: var(--text); }
+  details.explainer code { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+
   .statusbar {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     flex-wrap: wrap; margin: 18px 0 14px; font-size: 13px; color: var(--muted);
@@ -34,10 +43,17 @@
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 7px; }
   .dot.off { background: var(--bad); }
   .dot.paused { background: var(--warn); }
+  .banner {
+    display: none; background: rgba(240,180,41,.1); border: 1px solid rgba(240,180,41,.35);
+    color: var(--warn); border-radius: 8px; padding: 9px 14px; font-size: 13px; margin-bottom: 14px;
+  }
+  .banner.on { display: block; }
+
   .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 12px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
   .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .value.dim { color: var(--dim); }
   .sub { font-size: 11px; color: var(--dim); margin-top: 3px; }
   .two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
   @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
@@ -45,31 +61,36 @@
   .row + .row { border-top: 1px solid var(--border); }
   .row .k { color: var(--muted); }
   .row .v { font-family: var(--mono); }
+
   .detail { margin-bottom: 12px; }
   .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .txn-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-  .verdict { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .verdict { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
   .score-big { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
   .pill { font-size: 11px; padding: 3px 10px; border-radius: 999px; font-weight: 700; letter-spacing: 0.04em; }
   .allow { background: rgba(46,204,143,.14); color: var(--ok); }
   .block { background: rgba(255,92,122,.14); color: var(--bad); }
-  .why { font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; }
+  .why { font-size: 13px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; }
   .why .lead { color: var(--muted); }
-  .features { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 10px; }
+  .features { font-family: var(--mono); font-size: 11.5px; color: var(--dim); margin-top: 10px; line-height: 1.9; }
+  .features b { color: var(--muted); font-weight: 500; }
+
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 500; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border); }
   td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11.5px; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   td.driver { font-family: inherit; font-size: 12px; color: var(--muted); }
   tr.fresh td { background: rgba(91,140,255,.07); }
+
   button {
     background: var(--accent); color: #fff; border: 0; border-radius: 8px;
     padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
   }
-  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
   button:hover { filter: brightness(1.12); }
   button:disabled { opacity: .5; cursor: default; }
   .empty { color: var(--muted); font-size: 13px; padding: 18px 0; }
+  .empty b { color: var(--text); }
   .hint { font-size: 11px; color: var(--dim); }
 </style>
 </head>
@@ -81,41 +102,58 @@
     <span class="version" id="version">loading…</span>
   </header>
 
-  <p class="lede">
-    A live demo of the fraud scoring API. Everything below is read from
-    <code>GET /stats</code> every 3 seconds. Scores are produced by
-    <code>POST /score</code>, which is what the button and the load generator call.
-    Nothing is stored in a database — the permanent record is in Kibana.
-  </p>
+  <details class="explainer" id="explainer" open>
+    <summary>What am I looking at?</summary>
+    <p><strong>What gets scored:</strong> one card transaction, described by eight numbers —
+      amount, hour of day, how many transactions this card made in the last 24 hours, its
+      30-day average amount, distance from home, whether the merchant is foreign, a merchant
+      risk score, and how old the card is.</p>
+    <p><strong>How:</strong> a logistic regression turns those eight numbers into a single
+      fraud probability between 0 and 1. The three features that pushed the number furthest
+      are shown under every decision.</p>
+    <p><strong>BLOCK</strong> means the probability is <strong>at or above 0.50</strong> — in a real
+      system that would decline the payment or send it to a human for review.
+      <strong>ALLOW</strong> means below 0.50 and the payment would proceed.</p>
+    <p><strong>Why things move:</strong> the page re-reads <code>/stats</code> every 3 seconds.
+      The counters only change when a transaction is actually scored — by the button below, or by
+      a load generator if one is running. Nothing is stored in a database; the permanent record
+      is in Kibana.</p>
+    <p><strong>If it feels busy:</strong> press <strong>Freeze</strong>. The numbers stop updating
+      and you can read them at your own pace.</p>
+  </details>
 
   <div class="statusbar">
     <span id="status"><span class="dot"></span>connecting…</span>
     <span style="display:flex; gap:8px;">
-      <button class="ghost" id="pause-btn">Pause updates</button>
+      <button class="ghost" id="pause-btn">Freeze</button>
       <button id="score-btn">Score one transaction</button>
     </span>
+  </div>
+
+  <div class="banner" id="banner">
+    Frozen — the numbers below are not updating. Press <strong>Resume</strong> to go live again.
   </div>
 
   <div class="grid">
     <div class="card">
       <div class="label">Scored</div>
       <div class="value" id="scored">0</div>
-      <div class="sub">total since the pods started</div>
+      <div class="sub">transactions this browser has seen</div>
     </div>
     <div class="card">
       <div class="label">Blocked</div>
       <div class="value" id="fraud">0</div>
-      <div class="sub">score ≥ 0.50</div>
+      <div class="sub" id="fraud-sub">score ≥ 0.50</div>
     </div>
     <div class="card">
       <div class="label">Block rate</div>
-      <div class="value" id="rate">0.0%</div>
-      <div class="sub">dataset is ~2% fraud</div>
+      <div class="value" id="rate">—</div>
+      <div class="sub" id="rate-sub">needs a few more samples</div>
     </div>
     <div class="card">
       <div class="label">p95 latency</div>
-      <div class="value" id="latency">0</div>
-      <div class="sub">last 500 requests</div>
+      <div class="value" id="latency">—</div>
+      <div class="sub">slowest 5% of the last 500</div>
     </div>
   </div>
 
@@ -133,8 +171,7 @@
       <div class="row"><span class="k">source</span><span class="v" id="secret-source">—</span></div>
       <div class="row"><span class="k">fingerprint</span><span class="v" id="secret-fp">—</span></div>
       <div class="hint" style="margin-top:8px">
-        Fetched from HashiCorp Vault at startup. Every score response is
-        HMAC-signed with it.
+        Fetched from HashiCorp Vault at startup. Every score response is HMAC-signed with it.
       </div>
     </div>
   </div>
@@ -144,17 +181,17 @@
       <div class="label" style="margin:0">Most recent transaction</div>
       <div class="txn-meta" id="last-meta">—</div>
     </div>
-    <div id="last-body"><div class="empty">Nothing scored yet. Click “Score one transaction”.</div></div>
+    <div id="last-body"></div>
   </div>
 
   <div class="card">
-    <div class="label">Last 20 transactions</div>
+    <div class="label">Recent transactions</div>
     <table>
       <thead><tr>
         <th>Time</th><th>Transaction</th><th class="num">Amount</th>
         <th class="num">Score</th><th>Decision</th><th>Main driver</th>
       </tr></thead>
-      <tbody id="rows"><tr><td colspan="6" class="empty">Nothing scored yet.</td></tr></tbody>
+      <tbody id="rows"></tbody>
     </table>
   </div>
 
@@ -185,7 +222,7 @@ function fmtValue(feature, value) {
 }
 
 function whyText(reasons, decision) {
-  if (!reasons || !reasons.length) return "";
+  if (!reasons || !reasons.length) return "no explanation available";
   var lead = decision === "BLOCK" ? "Pushed toward fraud" : "Pushed toward legitimate";
   var parts = reasons.map(function (r) {
     var arrow = r.contribution > 0 ? "\u2191" : "\u2193";
@@ -195,27 +232,44 @@ function whyText(reasons, decision) {
 }
 
 function timeOf(ts) {
-  var d = new Date(ts * 1000);
-  return d.toTimeString().slice(0, 8);
+  return new Date(ts * 1000).toTimeString().slice(0, 8);
 }
 
-// Each replica keeps its counters in process memory, so consecutive polls can
-// land on different pods. Keep the latest value from every replica and show
-// the sum, so the total only ever goes up.
-var seen = {};
+// ---------------------------------------------------------------------------
+// The service runs two replicas and each keeps its state in process memory.
+// /stats is load balanced, so consecutive polls hit different pods and each
+// returns only its own transactions. Merging by txn_id here means the list
+// accumulates instead of emptying every time the poll lands on the other pod.
+// ---------------------------------------------------------------------------
+var txns = {};          // txn_id -> transaction
+var maxP95 = 0;         // best latency reading seen so far
 var paused = false;
+var MAX_KEPT = 200;
 
-function aggregate(s) {
-  seen[s.pod] = { scored: s.counters.scored, fraud: s.counters.fraud };
-  var scored = 0, fraud = 0;
-  Object.keys(seen).forEach(function (k) { scored += seen[k].scored; fraud += seen[k].fraud; });
-  return { scored: scored, fraud: fraud, replicas: Object.keys(seen).length };
+function mergeRecent(recent) {
+  if (!recent) return;
+  recent.forEach(function (t) { txns[t.txn_id] = t; });
+
+  var ids = Object.keys(txns);
+  if (ids.length > MAX_KEPT) {
+    ids.sort(function (a, b) { return txns[a].ts - txns[b].ts; });
+    ids.slice(0, ids.length - MAX_KEPT).forEach(function (id) { delete txns[id]; });
+  }
+}
+
+function sortedTxns() {
+  return Object.keys(txns)
+    .map(function (id) { return txns[id]; })
+    .sort(function (a, b) { return b.ts - a.ts; });
 }
 
 function renderLast(t) {
   if (!t) {
     $("last-meta").textContent = "\u2014";
-    $("last-body").innerHTML = '<div class="empty">Nothing scored yet. Click \u201cScore one transaction\u201d.</div>';
+    $("last-body").innerHTML =
+      '<div class="empty">No transactions yet. Press <b>Score one transaction</b> ' +
+      'to send a single transaction through the model and see exactly why it was ' +
+      'blocked or allowed.</div>';
     return;
   }
   $("last-meta").textContent = t.txn_id + "  \u00b7  " + timeOf(t.ts);
@@ -225,27 +279,30 @@ function renderLast(t) {
   html += '<div class="verdict">';
   html += '<span class="score-big">' + t.score.toFixed(4) + '</span>';
   html += '<span class="pill ' + cls + '">' + t.decision + '</span>';
-  html += '<span class="hint">score is the model\u2019s fraud probability</span>';
+  html += '<span class="hint">fraud probability \u00b7 threshold 0.50</span>';
   html += '</div>';
   html += '<div class="why"><span class="lead">Why: </span>' + whyText(t.reasons, t.decision) + '</div>';
   html += '<div class="features">';
-  html += 'hour ' + t.hour_of_day + ':00  \u00b7  ' + t.txn_count_24h + ' txns/24h  \u00b7  ';
-  html += 'avg $' + Number(t.avg_amount_30d).toFixed(2) + '  \u00b7  ';
-  html += 'distance ' + Number(t.distance_from_home_km).toFixed(1) + ' km  \u00b7  ';
-  html += (t.is_foreign ? "foreign" : "domestic") + '  \u00b7  ';
-  html += 'merchant risk ' + Number(t.merchant_risk).toFixed(2) + '  \u00b7  ';
-  html += 'card ' + t.card_age_days + ' days old';
+  html += '<b>amount</b> $' + Number(t.amount).toFixed(2) + '  \u00b7  ';
+  html += '<b>hour</b> ' + t.hour_of_day + ':00  \u00b7  ';
+  html += '<b>txns/24h</b> ' + t.txn_count_24h + '  \u00b7  ';
+  html += '<b>30d avg</b> $' + Number(t.avg_amount_30d).toFixed(2) + '  \u00b7  ';
+  html += '<b>distance</b> ' + Number(t.distance_from_home_km).toFixed(1) + ' km  \u00b7  ';
+  html += '<b>merchant</b> ' + (t.is_foreign ? "foreign" : "domestic") + '  \u00b7  ';
+  html += '<b>risk</b> ' + Number(t.merchant_risk).toFixed(2) + '  \u00b7  ';
+  html += '<b>card age</b> ' + t.card_age_days + ' days';
   html += '</div>';
   $("last-body").innerHTML = html;
 }
 
-function renderTable(recent) {
+function renderTable(list) {
   var body = $("rows");
-  if (!recent || !recent.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">Nothing scored yet.</td></tr>';
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">No transactions yet. ' +
+      'Press <b>Score one transaction</b>, or run a load generator.</td></tr>';
     return;
   }
-  body.innerHTML = recent.map(function (r, i) {
+  body.innerHTML = list.slice(0, 20).map(function (r, i) {
     var cls = r.decision === "BLOCK" ? "block" : "allow";
     var driver = (r.reasons && r.reasons.length) ? FEATURE_LABELS[r.reasons[0].feature] : "\u2014";
     return '<tr class="' + (i === 0 ? "fresh" : "") + '">' +
@@ -263,14 +320,33 @@ async function refresh() {
   if (paused) return;
   try {
     var s = await (await fetch("/stats")).json();
-    var totals = aggregate(s);
+
+    mergeRecent(s.recent);
+    if (s.counters.p95_latency_ms > maxP95) maxP95 = s.counters.p95_latency_ms;
+
+    var list = sortedTxns();
+    var blocked = list.filter(function (t) { return t.decision === "BLOCK"; }).length;
+    var total = list.length;
 
     $("version").textContent = "v" + s.version + " \u00b7 build #" + s.build + " \u00b7 " + s.git_sha;
-    $("scored").textContent = totals.scored.toLocaleString();
-    $("fraud").textContent = totals.fraud.toLocaleString();
-    $("rate").textContent = totals.scored ? ((totals.fraud / totals.scored) * 100).toFixed(1) + "%" : "0.0%";
-    $("latency").innerHTML = s.counters.p95_latency_ms +
-      '<small style="font-size:14px;color:var(--muted)"> ms</small>';
+    $("scored").textContent = total.toLocaleString();
+    $("fraud").textContent = blocked.toLocaleString();
+    $("fraud-sub").textContent = "of " + total + " \u00b7 score \u2265 0.50";
+
+    if (total >= 20) {
+      $("rate").textContent = ((blocked / total) * 100).toFixed(1) + "%";
+      $("rate").className = "value";
+      $("rate-sub").textContent = "dataset is ~2% fraud";
+    } else {
+      $("rate").textContent = "\u2014";
+      $("rate").className = "value dim";
+      $("rate-sub").textContent = "needs 20+ samples (have " + total + ")";
+    }
+
+    if (maxP95 > 0) {
+      $("latency").innerHTML = maxP95.toFixed(1) +
+        '<small style="font-size:14px;color:var(--muted)"> ms</small>';
+    }
 
     if (s.model) {
       $("model-version").textContent = s.model.version;
@@ -281,11 +357,11 @@ async function refresh() {
     $("secret-source").textContent = s.secret.source;
     $("secret-fp").textContent = s.secret.fingerprint;
 
-    $("status").innerHTML = '<span class="dot"></span>live \u00b7 ' + totals.replicas +
-      (totals.replicas === 1 ? " replica" : " replicas") + ' \u00b7 served by ' + s.pod;
+    $("status").innerHTML = '<span class="dot"></span>live \u00b7 ' +
+      'served by ' + s.pod;
 
-    renderLast(s.recent && s.recent.length ? s.recent[0] : null);
-    renderTable(s.recent);
+    renderLast(list.length ? list[0] : null);
+    renderTable(list);
   } catch (e) {
     $("status").innerHTML = '<span class="dot off"></span>disconnected \u2014 is the app running?';
   }
@@ -293,9 +369,10 @@ async function refresh() {
 
 $("pause-btn").addEventListener("click", function (ev) {
   paused = !paused;
-  ev.target.textContent = paused ? "Resume updates" : "Pause updates";
+  ev.target.textContent = paused ? "Resume" : "Freeze";
+  $("banner").className = paused ? "banner on" : "banner";
   if (paused) {
-    $("status").innerHTML = '<span class="dot paused"></span>paused \u2014 numbers frozen so you can read them';
+    $("status").innerHTML = '<span class="dot paused"></span>frozen \u2014 not updating';
   } else {
     refresh();
   }
@@ -304,7 +381,6 @@ $("pause-btn").addEventListener("click", function (ev) {
 $("score-btn").addEventListener("click", async function (ev) {
   ev.target.disabled = true;
   try {
-    // Same shape as one row of the synthetic dataset the model was trained on.
     var amount = Math.round(Math.exp(4.2 + (Math.random() - 0.5) * 2.2) * 100) / 100;
     amount = Math.min(Math.max(amount, 1), 5000);
     var txn = {
@@ -317,13 +393,17 @@ $("score-btn").addEventListener("click", async function (ev) {
       merchant_risk: Math.round(Math.random() * 0.6 * 1000) / 1000,
       card_age_days: 30 + Math.floor(Math.random() * 2970)
     };
-    await fetch("/score", {
+    var resp = await fetch("/score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(txn)
     });
+    var scored = await resp.json();
+    // Show the result immediately rather than waiting for the next poll.
+    mergeRecent([Object.assign({}, txn, scored, { ts: Date.now() / 1000 })]);
     paused = false;
-    $("pause-btn").textContent = "Pause updates";
+    $("pause-btn").textContent = "Freeze";
+    $("banner").className = "banner";
     await refresh();
   } finally {
     ev.target.disabled = false;

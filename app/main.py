@@ -240,10 +240,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else None
         )
 
-        recent = [
-            {k: v for k, v in row.items() if k != "ts"}
-            for row in list(state.recent)[-config.recent_window:][::-1]
-        ]
+        # Newest first. `ts` must stay: the dashboard sorts and timestamps by it.
+        recent = list(state.recent)[-config.recent_window:][::-1]
 
         return StatsResponse(
             version=config.version,
