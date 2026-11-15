@@ -5,6 +5,19 @@
   changed_when: false
   failed_when: docker_check.rc != 0
 
+# k3d writes a kubeconfig whose server is https://0.0.0.0:<port>. That address
+# is meaningless inside a container, so rewrite it to host.docker.internal
+# before handing the file to Jenkins.
+- name: Build a kubeconfig reachable from inside the Jenkins container
+  ansible.builtin.shell: |
+    set -o pipefail
+    sed 's#https://0\.0\.0\.0:#https://host.docker.internal:#g' \
+      "$HOME/.kube/config" > "{{ compose_dir }}/kubeconfig.jenkins"
+    chmod 600 "{{ compose_dir }}/kubeconfig.jenkins"
+  args:
+    executable: /bin/bash
+  changed_when: true
+
 - name: Start Jenkins with Docker Compose
   ansible.builtin.command:
     cmd: docker compose up -d --build
@@ -25,9 +38,17 @@
   delay: 5
   failed_when: false
 
+- name: Confirm Jenkins can reach the cluster
+  ansible.builtin.command:
+    cmd: docker exec fraudloop-jenkins kubectl get nodes --no-headers
+  register: jenkins_nodes
+  changed_when: false
+  failed_when: jenkins_nodes.rc != 0
+
 - name: Report the Jenkins URL
   ansible.builtin.debug:
     msg: >-
-      Jenkins is up at http://127.0.0.1:{{ jenkins_port }}.
+      Jenkins is up at http://127.0.0.1:{{ jenkins_port }} and can see
+      {{ jenkins_nodes.stdout_lines | length }} cluster node(s).
       Initial admin password:
       docker exec fraudloop-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
