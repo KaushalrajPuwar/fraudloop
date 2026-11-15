@@ -1,0 +1,33 @@
+# Jenkins runs on the host rather than in the cluster: it keeps ~1 GB out of
+# the Kubernetes node and avoids the chicken-and-egg problem of a cluster
+# that needs Jenkins to deploy itself.
+name: fraudloop
+
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
+    image: fraudloop-jenkins:local
+    container_name: fraudloop-jenkins
+    user: root
+    ports:
+      - "8090:8080"    # 8080 is taken by the k3d load balancer
+      - "50000:50000"
+    environment:
+      JAVA_OPTS: "-Xms256m -Xmx768m"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.kube:/root/.kube:ro
+    mem_limit: 1g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  jenkins_home:
