@@ -1,0 +1,13 @@
+# Image used by Jenkins for lint, test, and training. Dependencies are baked
+# in so the pipeline does not reinstall them on every build.
+FROM python:3.12-slim
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /src
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install -r requirements-dev.txt
+
+CMD ["pytest", "-q"]

@@ -1,0 +1,132 @@
+// FraudLoop delivery pipeline.
+//
+// Every stage either produces an artifact or proves one is safe to ship.
+// The quality gate in "Train" is what makes this an MLOps pipeline rather
+// than a plain CI pipeline: a worse model fails the build.
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        APP_VERSION  = '0.1.0'
+        IMAGE_NAME   = 'docker.io/kaushalrajpuwar/fraudloop-scorer'
+        CI_IMAGE     = 'fraudloop-ci:latest'
+        NAMESPACE    = 'fraudloop'
+        DOCKER_CREDS = 'dockerhub'
+        MIN_PR_AUC   = '0.60'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_SHA = sh(
+                        returnStdout: true,
+                        script: 'git rev-parse --short HEAD'
+                    ).trim()
+                    echo "Building ${env.GIT_SHA}"
+                }
+            }
+        }
+
+        stage('CI image') {
+            steps {
+                sh 'docker build -f docker/Dockerfile.ci -t $CI_IMAGE .'
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                sh 'docker run --rm -v "$PWD":/src -w /src $CI_IMAGE ruff check app ml tests'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'docker run --rm -v "$PWD":/src -w /src $CI_IMAGE pytest -q'
+            }
+        }
+
+        stage('Train and quality gate') {
+            steps {
+                sh '''
+                    docker run --rm -v "$PWD":/src -w /src \
+                        -e BUILD_NUMBER="$BUILD_NUMBER" \
+                        -e MIN_PR_AUC="$MIN_PR_AUC" \
+                        $CI_IMAGE python ml/train.py
+                '''
+            }
+        }
+
+        stage('Build image') {
+            steps {
+                sh '''
+                    docker build -f docker/Dockerfile \
+                        --build-arg APP_VERSION="$APP_VERSION" \
+                        --build-arg BUILD_NUMBER="$BUILD_NUMBER" \
+                        --build-arg GIT_SHA="$GIT_SHA" \
+                        -t "$IMAGE_NAME:$GIT_SHA" \
+                        -t "$IMAGE_NAME:latest" .
+                '''
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: env.DOCKER_CREDS,
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push "$IMAGE_NAME:$GIT_SHA"
+                        docker push "$IMAGE_NAME:latest"
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                    kubectl -n "$NAMESPACE" set image deployment/scorer \
+                        scorer="$IMAGE_NAME:$GIT_SHA"
+                    kubectl -n "$NAMESPACE" rollout status deployment/scorer --timeout=240s
+                '''
+            }
+        }
+
+        stage('Smoke test') {
+            steps {
+                sh '''
+                    POD=$(kubectl -n "$NAMESPACE" get pod \
+                        -l app.kubernetes.io/name=scorer \
+                        -o jsonpath='{.items[0].metadata.name}')
+                    kubectl -n "$NAMESPACE" exec "$POD" -- python -c \
+                        "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/readyz').read().decode())"
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployed $IMAGE_NAME:$GIT_SHA to $NAMESPACE"
+        }
+        failure {
+            echo 'Build failed - nothing was deployed.'
+        }
+        always {
+            sh 'docker image prune -f >/dev/null 2>&1 || true'
+        }
+    }
+}
