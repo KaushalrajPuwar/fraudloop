@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FraudLoop</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #14171f; --border: #232838; --text: #e6e9f0;
+    --muted: #8b93a7; --accent: #5b8cff; --ok: #2ecc8f; --bad: #ff5c7a;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 24px 64px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .version {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 12px;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px;
+  }
+  .card .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .card .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .card .value.small { font-size: 15px; font-family: var(--mono); font-weight: 500; }
+  .card .hint { font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+  .two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+  .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+  .row + .row { border-top: 1px solid var(--border); }
+  .row .k { color: var(--muted); }
+  .row .v { font-family: var(--mono); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); font-weight: 500; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; letter-spacing: 0.03em; }
+  .allow { background: rgba(46,204,143,.14); color: var(--ok); }
+  .block { background: rgba(255,92,122,.14); color: var(--bad); }
+  .bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .5; cursor: default; }
+  .empty { color: var(--muted); font-size: 13px; padding: 16px 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 7px; }
+  .dot.off { background: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Fraud<span>Loop</span></h1>
+    <span class="version" id="version">loading…</span>
+  </header>
+  <p class="sub">Real-time transaction fraud scoring &middot; <span id="status"><span class="dot"></span>live</span></p>
+
+  <div class="grid">
+    <div class="card"><div class="label">Scored</div><div class="value" id="scored">0</div></div>
+    <div class="card"><div class="label">Fraud flagged</div><div class="value" id="fraud">0</div></div>
+    <div class="card"><div class="label">Fraud rate</div><div class="value" id="rate">0%</div></div>
+    <div class="card"><div class="label">p95 latency</div><div class="value" id="latency">0<small style="font-size:14px;color:var(--muted)"> ms</small></div></div>
+  </div>
+
+  <div class="two">
+    <div class="card">
+      <div class="label">Model</div>
+      <div class="row"><span class="k">version</span><span class="v" id="model-version">—</span></div>
+      <div class="row"><span class="k">trained</span><span class="v" id="model-trained">—</span></div>
+      <div class="row"><span class="k">PR-AUC</span><span class="v" id="model-pr">—</span></div>
+      <div class="row"><span class="k">ROC-AUC</span><span class="v" id="model-roc">—</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Secret</div>
+      <div class="row"><span class="k">source</span><span class="v" id="secret-source">—</span></div>
+      <div class="row"><span class="k">fingerprint</span><span class="v" id="secret-fp">—</span></div>
+      <div class="hint" style="margin-top:12px">Responses are HMAC-signed with this key.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="bar">
+      <div class="label" style="margin:0">Recent transactions</div>
+      <button id="score-btn">Score a random transaction</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Transaction</th><th>Amount</th><th class="num">Score</th><th>Decision</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="4" class="empty">No transactions yet.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function randomTransaction() {
+  const amount = Math.round(Math.exp(4.2 + (Math.random() - 0.5) * 2.2) * 100) / 100;
+  return {
+    amount: Math.min(Math.max(amount, 1), 5000),
+    hour_of_day: Math.floor(Math.random() * 24),
+    txn_count_24h: Math.floor(Math.random() * 8),
+    avg_amount_30d: Math.round(amount * (0.4 + Math.random() * 1.2) * 100) / 100,
+    distance_from_home_km: Math.round(-25 * Math.log(1 - Math.random() * 0.98) * 10) / 10,
+    is_foreign: Math.random() < 0.08 ? 1 : 0,
+    merchant_risk: Math.round(Math.random() * 0.6 * 1000) / 1000,
+    card_age_days: 30 + Math.floor(Math.random() * 2970),
+  };
+}
+
+async function refresh() {
+  try {
+    const s = await (await fetch("/stats")).json();
+    $("version").textContent = `v${s.version} · build #${s.build} · ${s.git_sha}`;
+    $("scored").textContent = s.counters.scored.toLocaleString();
+    $("fraud").textContent = s.counters.fraud.toLocaleString();
+    $("rate").textContent = (s.counters.fraud_rate * 100).toFixed(1) + "%";
+    $("latency").innerHTML = s.counters.p95_latency_ms + '<small style="font-size:14px;color:var(--muted)"> ms</small>';
+    if (s.model) {
+      $("model-version").textContent = s.model.version;
+      $("model-trained").textContent = (s.model.trained_at || "").replace("T", " ").slice(0, 19);
+      $("model-pr").textContent = s.model.pr_auc.toFixed(3);
+      $("model-roc").textContent = s.model.roc_auc.toFixed(3);
+    }
+    $("secret-source").textContent = s.secret.source;
+    $("secret-fp").textContent = s.secret.fingerprint;
+    $("status").innerHTML = '<span class="dot"></span>live';
+
+    const body = $("rows");
+    if (!s.recent.length) {
+      body.innerHTML = '<tr><td colspan="4" class="empty">No transactions yet.</td></tr>';
+    } else {
+      body.innerHTML = s.recent.map((r) => `
+        <tr>
+          <td>${r.txn_id}</td>
+          <td class="num">${r.amount.toFixed(2)}</td>
+          <td class="num">${r.score.toFixed(4)}</td>
+          <td><span class="pill ${r.decision === "BLOCK" ? "block" : "allow"}">${r.decision}</span></td>
+        </tr>`).join("");
+    }
+  } catch (e) {
+    $("status").innerHTML = '<span class="dot off"></span>disconnected';
+  }
+}
+
+$("score-btn").addEventListener("click", async (ev) => {
+  ev.target.disabled = true;
+  try {
+    await fetch("/score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(randomTransaction()),
+    });
+    await refresh();
+  } finally {
+    ev.target.disabled = false;
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
