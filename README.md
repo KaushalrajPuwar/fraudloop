@@ -39,6 +39,11 @@ data generated in-repo with a fixed seed. No downloads, so the demo works offlin
 
 ## Quick start
 
+> **Setting this up on a fresh machine?** Follow
+> [docs/SETUP-GUIDE.md](docs/SETUP-GUIDE.md) instead — it covers Windows/WSL2,
+> every install step, Docker Hub credentials, Jenkins jobs, and a verification
+> checklist.
+
 ```bash
 # Prerequisites: Docker Desktop (4.5 GB RAM), k3d, ansible
 brew install k3d ansible
@@ -65,7 +70,8 @@ Then:
 | Kibana | `kubectl -n logging port-forward svc/kibana 5601:5601` |
 
 Full operating instructions, the demo script, and troubleshooting are in
-[docs/03-runbook.md](docs/03-runbook.md).
+[docs/03-runbook.md](docs/03-runbook.md). For a from-scratch install, see
+[docs/SETUP-GUIDE.md](docs/SETUP-GUIDE.md).
 
 ## How the loop closes
 

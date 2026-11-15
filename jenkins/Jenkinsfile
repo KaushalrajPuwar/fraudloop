@@ -7,6 +7,13 @@
 pipeline {
     agent any
 
+    triggers {
+        // Fallback for local setups where GitHub cannot reach Jenkins.
+        // Once the GitHub webhook is configured this can be removed; the
+        // duplicate-build risk is handled by disableConcurrentBuilds().
+        pollSCM('H/2 * * * *')
+    }
+
     options {
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '20'))
