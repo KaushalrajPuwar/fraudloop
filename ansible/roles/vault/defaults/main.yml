@@ -1,0 +1,9 @@
+---
+vault_namespace: vault
+vault_image: hashicorp/vault:1.18
+vault_secret_path: secret/fraudloop/api-key
+vault_policy_name: fraudloop-read
+vault_app_namespace: fraudloop
+
+# Rotated on every playbook run; the app picks it up on its next restart.
+vault_api_key: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"

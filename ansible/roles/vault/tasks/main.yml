@@ -1,0 +1,65 @@
+---
+- name: Apply the Vault manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/vault.yaml"
+
+- name: Find the Vault pod
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ vault_namespace }}"
+    label_selectors:
+      - app=vault
+  register: vault_pods
+  until:
+    - vault_pods.resources | length > 0
+    - vault_pods.resources[0].status.phase == "Running"
+  retries: 40
+  delay: 3
+
+- name: Record the pod name
+  ansible.builtin.set_fact:
+    vault_pod: "{{ vault_pods.resources[0].metadata.name }}"
+
+- name: Install the read-only policy
+  kubernetes.core.k8s_exec:
+    namespace: "{{ vault_namespace }}"
+    pod: "{{ vault_pod }}"
+    command: >-
+      vault policy write {{ vault_policy_name }} /vault/policies/fraudloop-read.hcl
+
+- name: Store the application API key
+  kubernetes.core.k8s_exec:
+    namespace: "{{ vault_namespace }}"
+    pod: "{{ vault_pod }}"
+    command: >-
+      vault kv put {{ vault_secret_path }} api_key={{ vault_api_key }}
+
+- name: Issue a scoped token for the application
+  kubernetes.core.k8s_exec:
+    namespace: "{{ vault_namespace }}"
+    pod: "{{ vault_pod }}"
+    command: >-
+      vault token create -policy={{ vault_policy_name }} -ttl=24h -field=token
+  register: vault_token_result
+
+- name: Hand the scoped token to the application namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: vault-token
+        namespace: "{{ vault_app_namespace }}"
+        labels:
+          app.kubernetes.io/name: scorer
+      type: Opaque
+      stringData:
+        token: "{{ vault_token_result.result.stdout | trim }}"
+
+- name: Report the secret location
+  ansible.builtin.debug:
+    msg: >-
+      Vault is ready. The application reads {{ vault_secret_path }}
+      using a token scoped to the {{ vault_policy_name }} policy.
