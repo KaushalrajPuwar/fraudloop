@@ -44,6 +44,7 @@ class ModelInfo(BaseModel):
     pr_auc: float
     roc_auc: float
     rows: int
+    threshold: float
 
 
 class SecretInfo(BaseModel):

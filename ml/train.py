@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import joblib  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: E402
@@ -80,6 +81,12 @@ def main() -> int:
     pr_auc = float(average_precision_score(y_test, probabilities))
     roc_auc = float(roc_auc_score(y_test, probabilities))
 
+    # class_weight="balanced" inflates the predicted probabilities, so a fixed
+    # 0.5 cut-off blocks far more than the real fraud rate. Pick the threshold
+    # that reproduces the training base rate instead, and ship it with the model.
+    base_rate = float(frame["is_fraud"].mean())
+    decision_threshold = float(np.quantile(probabilities, 1.0 - base_rate))
+
     build = os.environ.get("BUILD_NUMBER", "")
     version = f"m-{build}" if build else f"m-{datetime.now(UTC):%Y%m%d%H%M%S}"
 
@@ -93,7 +100,8 @@ def main() -> int:
         "roc_auc": round(roc_auc, 4),
         "rows": int(len(frame)),
         "features": FEATURES,
-        "fraud_rate": round(float(frame["is_fraud"].mean()), 4),
+        "fraud_rate": round(base_rate, 4),
+        "decision_threshold": round(decision_threshold, 6),
         "baseline_means": {name: round(float(features[name].mean()), 4) for name in FEATURES},
         "baseline_stds": {name: round(float(features[name].std()), 4) for name in FEATURES},
     }
@@ -108,6 +116,7 @@ def main() -> int:
     print(f"PR-AUC     {pr_auc:.4f}")
     print(f"ROC-AUC    {roc_auc:.4f}")
     print(f"gate       >= {args.min_pr_auc:.2f}")
+    print(f"threshold  {decision_threshold:.4f} (blocks ~{base_rate:.2%})")
 
     if pr_auc < args.min_pr_auc:
         print(

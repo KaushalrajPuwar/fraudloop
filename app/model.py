@@ -54,16 +54,28 @@ class ModelBundle:
     def rows(self) -> int:
         return int(self.meta.get("rows", 0))
 
+    @property
+    def threshold(self) -> float:
+        """Probability at or above which a transaction is blocked.
+
+        Trained rather than fixed: class weighting inflates the probabilities,
+        so the cut-off is chosen to reproduce the training base rate.
+        """
+        return float(self.meta.get("decision_threshold", 0.5))
+
     def predict_proba(self, values: dict[str, float]) -> float:
         """Score a single transaction. Returns the fraud probability."""
         row = self._row(values)
         return float(self.pipeline.predict_proba(row)[0][1])
 
-    def explain(self, values: dict[str, float], top_n: int = 3) -> list[dict[str, object]]:
-        """The features that pushed this prediction, largest influence first.
+    def explain(self, values: dict[str, float]) -> list[dict[str, object]]:
+        """Every feature's contribution, largest absolute influence first.
 
         For a linear model the contribution of a feature is its coefficient
         times its scaled value, so this is exact rather than an approximation.
+        All features are returned rather than a top-N slice: the caller decides
+        which direction to show, because "why was this allowed" and "why was
+        this blocked" need opposite ends of the list.
         """
         scaler = self.pipeline.named_steps["standardscaler"]
         classifier = self.pipeline.named_steps["logisticregression"]
@@ -71,7 +83,7 @@ class ModelBundle:
         scaled = scaler.transform(self._row(values))[0]
         contributions = classifier.coef_[0] * scaled
 
-        order = sorted(range(len(FEATURES)), key=lambda i: -abs(contributions[i]))[:top_n]
+        order = sorted(range(len(FEATURES)), key=lambda i: -abs(contributions[i]))
         return [
             {
                 "feature": FEATURES[i],

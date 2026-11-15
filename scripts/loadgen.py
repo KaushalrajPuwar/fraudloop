@@ -11,36 +11,44 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import time
 import urllib.error
 import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
+
+rng = np.random.default_rng()
+
 DEFAULT_URL = "http://localhost:8000"
 
 
 def random_transaction(drift: bool = False) -> dict:
-    """One plausible transaction. With --drift, amounts and distances inflate."""
-    amount = min(max(random.lognormvariate(4.2, 0.9), 1.0), 5000.0)
-    distance = random.expovariate(1 / 25.0)
-    txn_count = random.randint(0, 8)
+    """One transaction drawn from the same distribution as the training data.
+
+    Matching the generator in ml/generate_data.py matters: if the traffic
+    distribution differs, the block rate stops matching the fraud rate and the
+    dashboard looks wrong for reasons that have nothing to do with the model.
+    """
+    amount = float(np.clip(rng.lognormal(4.2, 0.9), 1.0, 5000.0))
+    distance = float(np.clip(rng.exponential(25.0), 0.0, 500.0))
+    txn_count = int(np.clip(rng.poisson(3.0), 0, 30))
 
     if drift:
-        amount *= 4.0
-        distance *= 3.0
+        amount = min(amount * 4.0, 5000.0)
+        distance = min(distance * 3.0, 500.0)
         txn_count = min(txn_count + 6, 30)
 
     return {
         "amount": round(amount, 2),
-        "hour_of_day": random.randint(0, 23),
+        "hour_of_day": int(rng.integers(0, 24)),
         "txn_count_24h": txn_count,
-        "avg_amount_30d": round(amount * random.uniform(0.4, 1.6), 2),
+        "avg_amount_30d": round(amount * float(rng.uniform(0.4, 1.6)), 2),
         "distance_from_home_km": round(distance, 1),
-        "is_foreign": 1 if random.random() < 0.08 else 0,
-        "merchant_risk": round(random.betavariate(2, 5), 3),
-        "card_age_days": random.randint(30, 3000),
+        "is_foreign": 1 if rng.random() < 0.08 else 0,
+        "merchant_risk": round(float(rng.beta(2, 5)), 3),
+        "card_age_days": int(rng.integers(30, 3000)),
     }
 
 

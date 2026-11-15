@@ -164,7 +164,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         probability = model.predict_proba(values)
         reasons = model.explain(values)
         latency_ms = round((time.perf_counter() - started) * 1000, 3)
-        decision = "BLOCK" if probability >= config.fraud_threshold else "ALLOW"
+        threshold = model.threshold if model else config.fraud_threshold
+        decision = "BLOCK" if probability >= threshold else "ALLOW"
 
         state.scored += 1
         if decision == "BLOCK":
@@ -235,6 +236,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 pr_auc=round(model.pr_auc, 4),
                 roc_auc=round(model.roc_auc, 4),
                 rows=model.rows,
+                threshold=round(model.threshold, 4),
             )
             if model
             else None

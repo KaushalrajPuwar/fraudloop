@@ -102,7 +102,7 @@
     <span class="version" id="version">loading…</span>
   </header>
 
-  <details class="explainer" id="explainer" open>
+  <details class="explainer" id="explainer">
     <summary>What am I looking at?</summary>
     <p><strong>What gets scored:</strong> one card transaction, described by eight numbers —
       amount, hour of day, how many transactions this card made in the last 24 hours, its
@@ -164,7 +164,11 @@
       <div class="row"><span class="k">trained</span><span class="v" id="model-trained">—</span></div>
       <div class="row"><span class="k">PR-AUC</span><span class="v" id="model-pr">—</span></div>
       <div class="row"><span class="k">ROC-AUC</span><span class="v" id="model-roc">—</span></div>
-      <div class="hint" style="margin-top:8px">CI refuses to deploy below PR-AUC 0.60.</div>
+      <div class="row"><span class="k">block at</span><span class="v" id="model-threshold">—</span></div>
+      <div class="hint" style="margin-top:8px">
+        The threshold is tuned at training time so the block rate matches the
+        ~2% fraud rate in the data. CI refuses to deploy below PR-AUC 0.60.
+      </div>
     </div>
     <div class="card">
       <div class="label">Signing key</div>
@@ -221,10 +225,23 @@ function fmtValue(feature, value) {
   return String(value);
 }
 
+// A BLOCK is explained by what pushed the score up; an ALLOW by what held it
+// down. Showing the largest absolute contributions regardless of direction
+// produced lines like "Pushed toward legitimate: amount $2400 ↑", which is
+// contradictory.
 function whyText(reasons, decision) {
   if (!reasons || !reasons.length) return "no explanation available";
-  var lead = decision === "BLOCK" ? "Pushed toward fraud" : "Pushed toward legitimate";
-  var parts = reasons.map(function (r) {
+
+  var wantPositive = decision === "BLOCK";
+  var picked = reasons.filter(function (r) {
+    return wantPositive ? r.contribution > 0 : r.contribution < 0;
+  }).slice(0, 3);
+
+  // Fall back to the largest absolute ones if nothing points the expected way.
+  if (!picked.length) picked = reasons.slice(0, 3);
+
+  var lead = wantPositive ? "Pushed toward fraud" : "Held back by";
+  var parts = picked.map(function (r) {
     var arrow = r.contribution > 0 ? "\u2191" : "\u2193";
     return FEATURE_LABELS[r.feature] + " " + fmtValue(r.feature, r.value) + " " + arrow;
   });
@@ -235,6 +252,29 @@ function timeOf(ts) {
   return new Date(ts * 1000).toTimeString().slice(0, 8);
 }
 
+// --- samplers matching the training distribution ---------------------------
+function gauss() {
+  var u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+var POISSON3 = [0.0498, 0.1991, 0.4232, 0.6472, 0.8153, 0.9161, 0.9665, 0.9881, 0.9962, 0.9989, 1.0];
+function poisson3() {
+  var u = Math.random();
+  for (var k = 0; k < POISSON3.length; k++) if (u <= POISSON3[k]) return k;
+  return 10;
+}
+
+// Beta(2,5) via the ratio of two gammas, approximated by sum of exponentials.
+function beta25() {
+  var a = 0, b = 0, i;
+  for (i = 0; i < 2; i++) a -= Math.log(1 - Math.random());
+  for (i = 0; i < 5; i++) b -= Math.log(1 - Math.random());
+  return a / (a + b);
+}
+
 // ---------------------------------------------------------------------------
 // The service runs two replicas and each keeps its state in process memory.
 // /stats is load balanced, so consecutive polls hit different pods and each
@@ -243,18 +283,44 @@ function timeOf(ts) {
 // ---------------------------------------------------------------------------
 var txns = {};          // txn_id -> transaction
 var maxP95 = 0;         // best latency reading seen so far
+var thresholdText = "0.50";   // set from the model metadata on each poll
 var paused = false;
 var MAX_KEPT = 200;
+var MAX_AGE_S = 1800;   // keep half an hour of history
+var STORE_KEY = "fraudloop.recent.v1";
+
+// Persist across reloads so the list does not start empty every time the page
+// is refreshed. Capped by age and length so it cannot grow without bound.
+function loadStored() {
+  try {
+    var raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    var saved = JSON.parse(raw);
+    var cutoff = Date.now() / 1000 - MAX_AGE_S;
+    Object.keys(saved).forEach(function (id) {
+      if (saved[id] && saved[id].ts > cutoff) txns[id] = saved[id];
+    });
+  } catch (e) { /* corrupt or unavailable storage - start fresh */ }
+}
+
+function saveStored() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(txns)); } catch (e) { /* ignore */ }
+}
 
 function mergeRecent(recent) {
   if (!recent) return;
   recent.forEach(function (t) { txns[t.txn_id] = t; });
 
+  var cutoff = Date.now() / 1000 - MAX_AGE_S;
   var ids = Object.keys(txns);
+  ids.forEach(function (id) { if (txns[id].ts < cutoff) delete txns[id]; });
+
+  ids = Object.keys(txns);
   if (ids.length > MAX_KEPT) {
     ids.sort(function (a, b) { return txns[a].ts - txns[b].ts; });
     ids.slice(0, ids.length - MAX_KEPT).forEach(function (id) { delete txns[id]; });
   }
+  saveStored();
 }
 
 function sortedTxns() {
@@ -279,7 +345,7 @@ function renderLast(t) {
   html += '<div class="verdict">';
   html += '<span class="score-big">' + t.score.toFixed(4) + '</span>';
   html += '<span class="pill ' + cls + '">' + t.decision + '</span>';
-  html += '<span class="hint">fraud probability \u00b7 threshold 0.50</span>';
+  html += '<span class="hint">fraud probability \u00b7 threshold ' + thresholdText + '</span>';
   html += '</div>';
   html += '<div class="why"><span class="lead">Why: </span>' + whyText(t.reasons, t.decision) + '</div>';
   html += '<div class="features">';
@@ -304,7 +370,13 @@ function renderTable(list) {
   }
   body.innerHTML = list.slice(0, 20).map(function (r, i) {
     var cls = r.decision === "BLOCK" ? "block" : "allow";
-    var driver = (r.reasons && r.reasons.length) ? FEATURE_LABELS[r.reasons[0].feature] : "\u2014";
+    var driver = "\u2014";
+    if (r.reasons && r.reasons.length) {
+      var wantPos = r.decision === "BLOCK";
+      var d = r.reasons.filter(function (x) { return wantPos ? x.contribution > 0 : x.contribution < 0; })[0]
+              || r.reasons[0];
+      driver = FEATURE_LABELS[d.feature];
+    }
     return '<tr class="' + (i === 0 ? "fresh" : "") + '">' +
       '<td>' + timeOf(r.ts) + '</td>' +
       '<td>' + r.txn_id + '</td>' +
@@ -331,7 +403,8 @@ async function refresh() {
     $("version").textContent = "v" + s.version + " \u00b7 build #" + s.build + " \u00b7 " + s.git_sha;
     $("scored").textContent = total.toLocaleString();
     $("fraud").textContent = blocked.toLocaleString();
-    $("fraud-sub").textContent = "of " + total + " \u00b7 score \u2265 0.50";
+    $("fraud-sub").textContent = "of " + total + " \u00b7 score \u2265 " +
+      (s.model ? s.model.threshold.toFixed(2) : "0.50");
 
     if (total >= 20) {
       $("rate").textContent = ((blocked / total) * 100).toFixed(1) + "%";
@@ -353,6 +426,8 @@ async function refresh() {
       $("model-trained").textContent = (s.model.trained_at || "").replace("T", " ").slice(0, 19);
       $("model-pr").textContent = s.model.pr_auc.toFixed(3);
       $("model-roc").textContent = s.model.roc_auc.toFixed(3);
+      $("model-threshold").textContent = s.model.threshold.toFixed(4);
+      thresholdText = s.model.threshold.toFixed(2);
     }
     $("secret-source").textContent = s.secret.source;
     $("secret-fp").textContent = s.secret.fingerprint;
@@ -381,16 +456,18 @@ $("pause-btn").addEventListener("click", function (ev) {
 $("score-btn").addEventListener("click", async function (ev) {
   ev.target.disabled = true;
   try {
-    var amount = Math.round(Math.exp(4.2 + (Math.random() - 0.5) * 2.2) * 100) / 100;
-    amount = Math.min(Math.max(amount, 1), 5000);
+    // Drawn from the same distribution as ml/generate_data.py, so a manual
+    // click produces a transaction the model considers representative.
+    var amount = Math.min(Math.max(Math.exp(4.2 + 0.9 * gauss()) , 1), 5000);
+    var distance = Math.min(-25 * Math.log(1 - Math.random()), 500);
     var txn = {
-      amount: amount,
+      amount: Math.round(amount * 100) / 100,
       hour_of_day: Math.floor(Math.random() * 24),
-      txn_count_24h: Math.floor(Math.random() * 8),
+      txn_count_24h: poisson3(),
       avg_amount_30d: Math.round(amount * (0.4 + Math.random() * 1.2) * 100) / 100,
-      distance_from_home_km: Math.round(-25 * Math.log(1 - Math.random() * 0.98) * 10) / 10,
+      distance_from_home_km: Math.round(distance * 10) / 10,
       is_foreign: Math.random() < 0.08 ? 1 : 0,
-      merchant_risk: Math.round(Math.random() * 0.6 * 1000) / 1000,
+      merchant_risk: Math.round(beta25() * 1000) / 1000,
       card_age_days: 30 + Math.floor(Math.random() * 2970)
     };
     var resp = await fetch("/score", {
@@ -410,6 +487,7 @@ $("score-btn").addEventListener("click", async function (ev) {
   }
 });
 
+loadStored();
 refresh();
 setInterval(refresh, 3000);
 </script>
