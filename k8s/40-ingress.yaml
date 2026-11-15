@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scorer
+  namespace: fraudloop
+  labels:
+    app.kubernetes.io/name: scorer
+spec:
+  rules:
+    - host: fraudloop.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: scorer
+                port:
+                  number: 80
