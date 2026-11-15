@@ -1,76 +1,101 @@
 # FraudLoop
 
-**Real-time transaction fraud scoring, with a closed-loop MLOps pipeline.**
+**Real-time transaction fraud scoring, wrapped in a complete delivery pipeline.**
 
-FraudLoop is a deliberately small fraud-scoring service wrapped in a complete, automated
-DevOps pipeline. The application is a vehicle — the pipeline is the point.
+FraudLoop is a deliberately small fraud-scoring service. The application is a vehicle; the
+pipeline around it is the point of the project.
 
 ```
-git push  ->  Jenkins  ->  tests  ->  train + eval gate  ->  Docker image
-                                                          ->  Docker Hub
-                                                          ->  Kubernetes
-                                                          ->  Kibana
+git push → Jenkins → lint → test → train + quality gate → Docker image
+                                                       → Docker Hub
+                                                       → Kubernetes
+                                                       → Kibana
 ```
 
 ## What it does
 
-A FastAPI service scores transactions for fraud risk in real time. Every request emits a
-structured JSON log line that flows into the ELK stack. A scheduled Jenkins job watches the
-live feature distribution, and when it drifts far enough from the training baseline it
-triggers the pipeline to retrain and redeploy — with no human in the loop.
+A FastAPI service scores card transactions for fraud risk in real time. Every request emits
+a structured JSON log line that ships to the ELK stack. A scheduled Jenkins job watches the
+live feature distribution and, when it drifts far enough from the training baseline, triggers
+the pipeline to retrain and redeploy — with no human in the loop.
+
+The model is a logistic regression over eight transaction features, trained on synthetic
+data generated in-repo with a fixed seed. No downloads, so the demo works offline.
 
 ## Stack
 
 | Stage | Tool |
 |---|---|
 | Source control | GitHub (protected `main`, PRs) |
-| CI/CD | Jenkins (declarative pipeline) |
-| Build | Docker (multi-stage, non-root) |
+| CI/CD | Jenkins — declarative pipeline |
+| Build | Docker, multi-stage, non-root |
 | Registry | Docker Hub |
-| Config management | Ansible (roles) |
+| Configuration management | Ansible — four roles |
 | Orchestration | Kubernetes on k3d (K3s) |
-| Secrets | HashiCorp Vault |
-| Autoscaling | Horizontal Pod Autoscaler |
+| Secrets | HashiCorp Vault — policy-scoped token |
+| Autoscaling | Horizontal Pod Autoscaler, 2 → 6 |
 | Logging | Elasticsearch · Logstash · Kibana |
-| App | FastAPI · scikit-learn |
+| Application | FastAPI · scikit-learn |
 
 ## Quick start
 
 ```bash
-# 1. Environment
+# Prerequisites: Docker Desktop (4.5 GB RAM), k3d, ansible
+brew install k3d ansible
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
-# 2. Generate the dataset (deterministic, no downloads)
-python ml/generate_data.py
+# Bring the whole platform up
+ansible-playbook ansible/site.yml
 
-# 3. Run the tests
-pytest
-
-# 4. Cluster
-k3d cluster create fraudloop --servers 1 --agents 1 \
-  --port "8080:80@loadbalancer" --port "8443:443@loadbalancer"
+# Train, build, deploy
+python ml/train.py
+docker build -f docker/Dockerfile -t kaushalrajpuwar/fraudloop-scorer:latest .
+docker push kaushalrajpuwar/fraudloop-scorer:latest
+kubectl apply -f k8s/
+kubectl -n fraudloop rollout status deployment/scorer
 ```
+
+Then:
+
+| Service | Where |
+|---|---|
+| Application | http://fraudloop.localhost:8080 |
+| Jenkins | http://127.0.0.1:8090 |
+| Kibana | `kubectl -n logging port-forward svc/kibana 5601:5601` |
+
+Full operating instructions, the demo script, and troubleshooting are in
+[docs/03-runbook.md](docs/03-runbook.md).
+
+## How the loop closes
+
+```bash
+python scripts/loadgen.py --rate 30 --duration 30 --drift   # shift the distribution
+python ml/drift_check.py --url http://localhost:8000        # exits 2
+```
+
+The scheduled drift job picks that up, triggers the main pipeline, and the model is
+retrained, re-gated, and redeployed. A model that regresses below PR-AUC 0.60 fails the
+build and never ships.
 
 ## Repository layout
 
 ```
-app/        FastAPI service, model loader, structured logging, dashboard
-ml/         data generator, training, drift check
-tests/      unit and API tests
-docker/     Dockerfile
-k8s/        Kubernetes manifests
-ansible/    provisioning roles (cluster, jenkins, elk, vault)
-jenkins/    Jenkinsfile and drift pipeline
-compose/    Docker Compose for the host-side Jenkins
-scripts/    load generator, smoke test
-docs/       requirements analysis, project plan, runbook
+app/        FastAPI service, model loader, secret resolution, structured logging, dashboard
+ml/         deterministic data generator, training with quality gate, drift check
+tests/      14 tests covering the API contract and model behaviour
+docker/     application image and CI image
+k8s/        namespaces, config, deployment, service, ingress, HPA, PDB
+ansible/    site.yml plus cluster, elk, vault, and jenkins roles
+jenkins/    delivery pipeline and scheduled drift pipeline
+compose/    host-side Jenkins
+scripts/    load generator, smoke test, Kibana provisioning
+docs/       requirements analysis, plan, proposal, runbook
 ```
 
 ## Dataset
 
-Fully synthetic and generated in-repo with a fixed seed — no downloads, so the demo works
-offline. 50,000 transactions, 8 features, ~2% fraud rate, PR-AUC ≈ 0.73 with logistic
+50,000 synthetic transactions, 8 features, ~2% fraud rate, PR-AUC ≈ 0.73 with logistic
 regression.
 
 ```bash
