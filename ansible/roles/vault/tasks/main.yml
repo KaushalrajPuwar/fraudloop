@@ -4,6 +4,18 @@
     state: present
     src: "{{ role_path }}/files/vault.yaml"
 
+- name: Wait for the Vault deployment to become ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: vault
+    namespace: "{{ vault_namespace }}"
+  register: vault_deployment
+  until:
+    - vault_deployment.resources | length > 0
+    - vault_deployment.resources[0].status.readyReplicas | default(0) >= 1
+  retries: 40
+  delay: 3
+
 - name: Find the Vault pod
   kubernetes.core.k8s_info:
     kind: Pod
@@ -14,33 +26,38 @@
   until:
     - vault_pods.resources | length > 0
     - vault_pods.resources[0].status.phase == "Running"
-  retries: 40
+  retries: 20
   delay: 3
 
 - name: Record the pod name
   ansible.builtin.set_fact:
     vault_pod: "{{ vault_pods.resources[0].metadata.name }}"
 
+# kubectl exec does not inherit VAULT_TOKEN from the container environment,
+# so every command passes it explicitly. The root token never leaves this role.
 - name: Install the read-only policy
   kubernetes.core.k8s_exec:
     namespace: "{{ vault_namespace }}"
     pod: "{{ vault_pod }}"
     command: >-
-      vault policy write {{ vault_policy_name }} /vault/policies/fraudloop-read.hcl
+      sh -c "VAULT_TOKEN=root vault policy write {{ vault_policy_name }}
+      /vault/policies/fraudloop-read.hcl"
 
 - name: Store the application API key
   kubernetes.core.k8s_exec:
     namespace: "{{ vault_namespace }}"
     pod: "{{ vault_pod }}"
     command: >-
-      vault kv put {{ vault_secret_path }} api_key={{ vault_api_key }}
+      sh -c "VAULT_TOKEN=root vault kv put {{ vault_secret_path }}
+      api_key={{ vault_api_key }}"
 
 - name: Issue a scoped token for the application
   kubernetes.core.k8s_exec:
     namespace: "{{ vault_namespace }}"
     pod: "{{ vault_pod }}"
     command: >-
-      vault token create -policy={{ vault_policy_name }} -ttl=24h -field=token
+      sh -c "VAULT_TOKEN=root vault token create
+      -policy={{ vault_policy_name }} -ttl=24h -field=token"
   register: vault_token_result
 
 - name: Hand the scoped token to the application namespace
@@ -56,10 +73,21 @@
           app.kubernetes.io/name: scorer
       type: Opaque
       stringData:
-        token: "{{ vault_token_result.result.stdout | trim }}"
+        token: "{{ vault_token_result.stdout | trim }}"
+
+- name: Confirm the scoped token can read the secret
+  kubernetes.core.k8s_exec:
+    namespace: "{{ vault_namespace }}"
+    pod: "{{ vault_pod }}"
+    command: >-
+      sh -c "VAULT_TOKEN={{ vault_token_result.stdout | trim }}
+      vault kv get -field=api_key {{ vault_secret_path }}"
+  register: vault_read_check
+  changed_when: false
 
 - name: Report the secret location
   ansible.builtin.debug:
     msg: >-
-      Vault is ready. The application reads {{ vault_secret_path }}
-      using a token scoped to the {{ vault_policy_name }} policy.
+      Vault is ready. The application reads {{ vault_secret_path }} with a
+      token scoped to the {{ vault_policy_name }} policy
+      (verified read length {{ vault_read_check.stdout | trim | length }}).
