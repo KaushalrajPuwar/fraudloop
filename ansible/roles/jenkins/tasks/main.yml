@@ -1,0 +1,33 @@
+---
+- name: Check that Docker is running
+  ansible.builtin.command: docker info
+  register: docker_check
+  changed_when: false
+  failed_when: docker_check.rc != 0
+
+- name: Start Jenkins with Docker Compose
+  ansible.builtin.command:
+    cmd: docker compose up -d --build
+    chdir: "{{ compose_dir }}"
+  register: compose_up
+  changed_when: >-
+    'Started' in compose_up.stderr or
+    'Created' in compose_up.stderr or
+    'Recreated' in compose_up.stderr
+
+- name: Wait for Jenkins to answer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ jenkins_port }}/login"
+    status_code: 200
+  register: jenkins_ready
+  until: jenkins_ready.status == 200
+  retries: 40
+  delay: 5
+  failed_when: false
+
+- name: Report the Jenkins URL
+  ansible.builtin.debug:
+    msg: >-
+      Jenkins is up at http://127.0.0.1:{{ jenkins_port }}.
+      Initial admin password:
+      docker exec fraudloop-jenkins cat /var/jenkins_home/secrets/initialAdminPassword

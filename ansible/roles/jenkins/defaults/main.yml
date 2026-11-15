@@ -1,0 +1,3 @@
+---
+compose_dir: "{{ playbook_dir }}/../compose"
+jenkins_port: 8090
