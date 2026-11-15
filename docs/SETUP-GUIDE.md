@@ -27,6 +27,11 @@ every step says what success looks like.
 - [Part 12 — Everyday operations](#part-12--everyday-operations)
 - [Part 13 — Troubleshooting](#part-13--troubleshooting)
 - [Part 14 — Reference](#part-14--reference)
+- [Part 15 — What remains, in order](#part-15--what-remains-in-order)
+
+**Short on time?** Read [0.6 Current state](#06-current-state--what-is-done-and-what-is-not)
+and [Part 15](#part-15--what-remains-in-order) first — they tell you what is
+already built and exactly what is left.
 
 ---
 
@@ -133,6 +138,42 @@ Terms you will see in the commands and in conversation.
 | **Playbook** | An Ansible script that configures machines |
 | **Role** | A reusable, self-contained chunk of an Ansible playbook |
 | **Port-forward** | Tunnelling a cluster service to your laptop so a browser can reach it |
+
+## 0.6 Current state — what is done and what is not
+
+Read this before you start. It tells you what you are inheriting and what you
+are expected to finish.
+
+### Built and verified
+
+| Component | State | Evidence |
+|---|---|---|
+| Application + dashboard | Working | 14 tests pass, dashboard renders, screenshots in `docs/images/` |
+| Container image | Working | builds to 546 MB, runs non-root, healthcheck passes |
+| Kubernetes manifests | Working | deployed and serving on `fraudloop.localhost:8080` |
+| Ansible playbook | Working | full from-scratch run: 28 tasks, 0 failures |
+| ELK stack | Working | 26k+ documents indexed, Kibana dashboard provisioned |
+| Vault integration | Working | app reports `source: vault` with a scoped token |
+| HPA | Working | scales 2 → 6 under load, back down after |
+| Zero-downtime rollout | Working | 5,600/5,600 requests during a rolling restart |
+| Drift detection | Working | clean data exits 0, drifted data exits 2 |
+| Jenkins **image and pipeline definition** | Written | `jenkins/Jenkinsfile` exists and is syntactically valid |
+
+### NOT done — this is your work
+
+| Item | Why it matters | Where |
+|---|---|---|
+| **Jenkins is unconfigured** | No jobs, no credentials, setup wizard not completed. **The pipeline has never actually run.** | Part 7 |
+| **Docker Hub push is untested** | The image was loaded into the cluster with `k3d image import`, never pushed to a registry | Part 6 |
+| **GitHub webhook** | Not configured; the pipeline relies on SCM polling | Part 7.6 |
+| **Kibana dashboard not visually checked** | Objects exist; nobody has looked at the rendered panels | Part 8 |
+| **Report (4–6 pages)** | A graded deliverable | — |
+| **Screen recording** | Backup for the live demo | — |
+| **Contribution statement** | Signed by both members | — |
+
+**The single most important gap is Jenkins.** Everything else in the pipeline
+has been proven by hand; the automated path has not. Until a green build exists,
+the 20-mark "working project" criterion is unproven.
 
 ---
 
@@ -826,10 +867,11 @@ a large sample, something is wrong with the model or the threshold.
 ### Model card
 
 ```
-version     m-20261115053313
-trained     2026-11-15 05:33:13
+version     m-20261115080410
+trained     2026-11-15 08:04:10
 PR-AUC      0.728
 ROC-AUC     0.990
+block at    0.9374
 ```
 
 Read from `artifacts/model_meta.json`, which the training stage baked into the
@@ -837,6 +879,17 @@ image. **Model version tracks image version** — that is why there is no MLflow
 in this project.
 
 PR-AUC 0.728 is the number the CI gate checks against 0.60.
+
+**Why the threshold is 0.9374 and not 0.5.** The model is trained with
+`class_weight="balanced"` to cope with the 2% fraud rate, and that inflates the
+predicted probabilities — a fixed 0.5 cut-off blocked about 15% of transactions.
+Training now computes the threshold that reproduces the training base rate (the
+98th percentile of predicted probabilities) and writes it into
+`model_meta.json` as `decision_threshold`. The app reads it from there.
+
+If an examiner asks why a transaction with a score of 0.61 was allowed: because
+0.61 is below 0.9374, and 0.9374 is the number that makes the block rate match
+the data. The model card shows the threshold for exactly this reason.
 
 ### Signing key card
 
@@ -1125,6 +1178,7 @@ pass `-H "Host: fraudloop.localhost"`.
 | Elasticsearch `OOMKilled` | heap too large for the node | keep `-Xmx384m`; `kubectl top pods -n logging` |
 | Kibana crash-loops with a V8 heap error | heap below ~512 MB | `NODE_OPTIONS` must stay `--max-old-space-size=640` |
 | Logstash never ready | Elasticsearch not up first | `kubectl -n logging logs deploy/logstash` — it retries |
+| Logstash restarts repeatedly, `OOMKilled`, exit 137 | heap plus JVM overhead exceeded a 512 Mi limit | already fixed — limit is 1 Gi and `XPACK_MONITORING_ENABLED=false`. If it returns, check `kubectl -n logging top pod -l app=logstash` |
 | HPA shows `<unknown>` | metrics-server still starting | wait 60 s, then `kubectl top pods -n fraudloop` |
 | Jenkins cannot reach the cluster | kubeconfig points at 0.0.0.0 | `ansible-playbook ansible/site.yml --tags jenkins` |
 | Pipeline fails at Push | `dockerhub` credential missing or misnamed | Part 7.3 |
@@ -1218,3 +1272,122 @@ Deliberate, documented, and worth knowing before a viva.
 - **Dashboard counters are in process memory.** They reset on restart and are
   not aggregated across the cluster by any server-side mechanism — the browser
   does the summing.
+
+---
+
+# Part 15 — What remains, in order
+
+Everything in Parts 1–8 gets you a running platform. This part is the actual
+to-do list. Work top to bottom; each item has an acceptance test.
+
+## 15.1 Get the platform running (Parts 1–5)
+
+**Done when:** `./scripts/preflight.sh` reports `failed 0`, `ansible-playbook
+ansible/site.yml` reports `failed=0`, and `./scripts/smoke.sh` passes.
+
+## 15.2 Docker Hub (Part 6)
+
+**Done when:** `docker push <you>/fraudloop-scorer:latest` succeeds and the
+image is visible at `hub.docker.com/r/<you>/fraudloop-scorer`.
+
+If you use your own Docker Hub account, change the three files listed in Part 6
+first — otherwise the pipeline pushes to Kaushal's account and the cluster pulls
+from it.
+
+## 15.3 Configure Jenkins (Part 7) — the critical one
+
+**Done when:** the `fraudloop` job exists, the `dockerhub` credential exists, and
+**a build has gone green end to end**.
+
+This is the biggest gap in the project. Every stage has been proven by hand but
+the automated path has never run. Expect the first build to fail somewhere — the
+likely candidates are the credential ID, the image name, or the `kubectl` context
+inside the container.
+
+Debugging a failed stage:
+
+```bash
+docker exec fraudloop-jenkins kubectl get nodes          # can Jenkins see the cluster?
+docker exec fraudloop-jenkins docker ps                   # can Jenkins use Docker?
+docker exec fraudloop-jenkins sh -c 'echo $PATH'          # are the CLIs on PATH?
+```
+
+## 15.4 Prove the deploy actually comes from the pipeline
+
+**Done when:** you push a commit, the build runs, and the dashboard header shows
+the new commit hash **without you running `kubectl` yourself**.
+
+This is the difference between "the app is deployed" and "the pipeline deploys
+the app". The 20-mark criterion is the second one.
+
+## 15.5 Check Kibana visually (Part 8)
+
+**Done when:** you have opened the dashboard in a browser and seen the three
+panels render with data.
+
+Nobody has looked at this yet. The saved objects exist and the API accepted them,
+but a Lens panel can still render empty if the index pattern or field names are
+wrong. Generate traffic first, then set the time range to *Last 15 minutes*.
+
+## 15.6 Run the demo end to end, twice
+
+**Done when:** you have run the Part 11 sequence start to finish without a
+surprise, twice.
+
+The second run matters — the first one always surfaces something.
+
+## 15.7 Record the backup
+
+Screen-record a full pipeline run: push → build → deploy → refresh → Kibana.
+The course requires this in case the live demo misbehaves.
+
+## 15.8 Write the report
+
+4–6 pages, PDF. The course asks for:
+
+- architecture diagram
+- tool choices and rationale
+- the cutting-edge extension
+- challenges
+
+`docs/02-proposal.md` covers the first three in one page and can be expanded.
+The "challenges" section writes itself from this guide's troubleshooting table —
+every bug listed there is a real one that was hit and fixed.
+
+## 15.9 Contribution statement
+
+Signed by both members. The course requires it.
+
+## 15.10 Before the viva
+
+- Both members can explain **their own** commits
+- Both members can explain why each tool was chosen
+- You can answer "why not Prometheus?", "why Vault in dev mode?", "why no
+  database?" — all three are answered in Part 14 *Known limitations*
+- The screen recording is on the machine you will demo from, not in the cloud
+
+---
+
+## Quick status board
+
+Copy this into your notes and tick it off.
+
+```
+[ ] platform runs from ansible-playbook
+[ ] docker hub push works
+[ ] jenkins credential 'dockerhub' created
+[ ] jenkins job 'fraudloop' created
+[ ] jenkins job 'fraudloop-drift' created
+[ ] FIRST GREEN BUILD                       <-- the big one
+[ ] push triggers a build automatically
+[ ] dashboard header changes after a deploy
+[ ] kibana dashboard renders with data
+[ ] zero-downtime demo passes
+[ ] HPA scales under load
+[ ] drift check triggers a retrain
+[ ] full demo rehearsed twice
+[ ] screen recording captured
+[ ] report written (4-6 pages)
+[ ] contribution statement signed
+```
+
