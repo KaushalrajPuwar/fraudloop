@@ -1,0 +1,6 @@
+---
+elk_namespace: logging
+elastic_stack_version: "8.15.3"
+elasticsearch_heap: "-Xms384m -Xmx384m"
+logstash_heap: "-Xms192m -Xmx192m"
+kibana_heap_mb: "256"

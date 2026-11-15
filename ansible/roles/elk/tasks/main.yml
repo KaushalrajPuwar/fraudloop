@@ -1,0 +1,55 @@
+---
+- name: Apply the Elasticsearch manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/elasticsearch.yaml"
+
+- name: Apply the Logstash manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/logstash.yaml"
+
+- name: Apply the Kibana manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/kibana.yaml"
+
+- name: Wait for Elasticsearch to report green
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: elasticsearch
+    namespace: "{{ elk_namespace }}"
+  register: es_deployment
+  until:
+    - es_deployment.resources | length > 0
+    - es_deployment.resources[0].status.readyReplicas | default(0) >= 1
+  retries: 60
+  delay: 5
+
+- name: Wait for Logstash to become ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: logstash
+    namespace: "{{ elk_namespace }}"
+  register: ls_deployment
+  until:
+    - ls_deployment.resources | length > 0
+    - ls_deployment.resources[0].status.readyReplicas | default(0) >= 1
+  retries: 60
+  delay: 5
+
+- name: Wait for Kibana to become ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    name: kibana
+    namespace: "{{ elk_namespace }}"
+  register: kb_deployment
+  until:
+    - kb_deployment.resources | length > 0
+    - kb_deployment.resources[0].status.readyReplicas | default(0) >= 1
+  retries: 60
+  delay: 5
+
+- name: Report the logging stack
+  ansible.builtin.debug:
+    msg: "ELK is ready in namespace {{ elk_namespace }}"
