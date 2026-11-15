@@ -1,0 +1,19 @@
+# Only app/, artifacts/, and requirements.txt belong in the build context.
+.git
+.venv
+.github
+data
+docs
+tests
+ml
+ansible
+k8s
+jenkins
+compose
+scripts
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.DS_Store
+*.md
