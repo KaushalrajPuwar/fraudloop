@@ -27,6 +27,10 @@
       - "8080:80@loadbalancer"
       - --port
       - "8443:443@loadbalancer"
+      # Jenkins runs in a container and reaches the API as host.docker.internal,
+      # so the API server certificate has to carry that name.
+      - --k3s-arg
+      - "--tls-san=host.docker.internal@server:0"
       - --wait
   when: cluster_name not in existing_clusters.stdout_lines
   register: cluster_created
