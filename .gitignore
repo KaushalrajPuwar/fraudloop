@@ -1,0 +1,29 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Generated artifacts ---
+data/*.csv
+*.pkl
+*.joblib
+model_meta.json
+reports/
+
+# --- Local / secrets ---
+.env
+.env.*
+*.pem
+*.key
+
+# --- Tooling ---
+.DS_Store
+.idea/
+.vscode/
+kubeconfig*
+*.log

@@ -1,0 +1,14 @@
+# Runtime
+fastapi==0.163.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+
+# ML
+scikit-learn==1.9.1
+pandas==3.1.1
+numpy==2.5.4
+
+# Dev / test
+pytest==9.2.0
+httpx==0.28.1
+ruff==0.17.5
