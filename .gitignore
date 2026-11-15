@@ -26,4 +26,5 @@ reports/
 .idea/
 .vscode/
 kubeconfig*
+compose/kubeconfig.jenkins
 *.log
